@@ -1,4 +1,4 @@
-name: Auto PR from main to test-feature
+name: Sync main into test-feature
 
 on:
   push:
@@ -6,11 +6,10 @@ on:
       - main
 
 jobs:
-  create-pr:
+  sync-to-test-feature:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pull-requests: write
 
     steps:
       - name: Checkout repository
@@ -23,44 +22,22 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Check if test-feature differs from main
+      - name: Check if test-feature is behind main
         id: diff
         run: |
-          git fetch origin test-feature
-          if git diff --quiet origin/test-feature...HEAD; then
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          git fetch origin main test-feature
+          if git rev-list --left-right --count origin/test-feature...origin/main | awk '{print $2}' | grep -q '[1-9]'; then
+            echo "needs_sync=true" >> "$GITHUB_OUTPUT"
           else
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "needs_sync=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Push sync branch and create PR
-        if: steps.diff.outputs.has_changes == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Merge main into test-feature without creating a separate branch
+        if: steps.diff.outputs.needs_sync == 'true'
         run: |
-          git checkout -B sync-main-to-test-feature origin/main
-          git push --force-with-lease origin sync-main-to-test-feature
-
-          if gh pr list --repo "${{ github.repository }}" --head "sync-main-to-test-feature" --base "test-feature" --json number --jq 'length' | grep -q '^0$'; then
-            gh pr create \
-              --repo "${{ github.repository }}" \
-              --base "test-feature" \
-              --head "sync-main-to-test-feature" \
-              --title "Sync main -> test-feature" \
-              --body "This PR was created automatically after a push or merge to main."
-          else
-            echo "PR already exists for sync-main-to-test-feature -> test-feature"
-          fi
-
-      - name: Auto-merge PR if no conflicts
-        if: steps.diff.outputs.has_changes == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          pr_number=$(gh pr list --repo "${{ github.repository }}" --head "sync-main-to-test-feature" --base "test-feature" --json number --jq '.[0].number')
-
-          if [ -n "$pr_number" ] && [ "$pr_number" != "null" ]; then
-            gh pr merge "$pr_number" --repo "${{ github.repository }}" --merge --auto || echo "PR was not auto-merged because it has conflicts or is not mergeable yet."
-          else
-            echo "No PR found to auto-merge."
-          fi
+          git checkout test-feature
+          git merge origin/main --no-edit || {
+            echo "Merge has conflicts. Aborting without changing test-feature."
+            exit 1
+          }
+          git push origin test-feature
