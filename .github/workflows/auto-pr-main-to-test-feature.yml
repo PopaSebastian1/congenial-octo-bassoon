@@ -1,0 +1,35 @@
+name: Auto PR from main to test-feature
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  create-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create pull request from main to test-feature
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          base: test-feature
+          branch: sync-main-to-test-feature
+          title: "Sync main -> test-feature"
+          body: |
+            This PR was created automatically after a push or merge to `main`.
+
+            Please review and merge it into `test-feature` when ready.
+          labels: |
+            automated
+            sync
+          delete-branch: true
