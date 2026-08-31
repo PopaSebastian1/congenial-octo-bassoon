@@ -51,3 +51,16 @@ jobs:
           else
             echo "PR already exists for sync-main-to-test-feature -> test-feature"
           fi
+
+      - name: Auto-merge PR if no conflicts
+        if: steps.diff.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pr_number=$(gh pr list --repo "${{ github.repository }}" --head "sync-main-to-test-feature" --base "test-feature" --json number --jq '.[0].number')
+
+          if [ -n "$pr_number" ] && [ "$pr_number" != "null" ]; then
+            gh pr merge "$pr_number" --repo "${{ github.repository }}" --merge --auto || echo "PR was not auto-merged because it has conflicts or is not mergeable yet."
+          else
+            echo "No PR found to auto-merge."
+          fi
