@@ -18,18 +18,36 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Create pull request from main to test-feature
-        uses: peter-evans/create-pull-request@v7
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          base: test-feature
-          branch: sync-main-to-test-feature
-          title: "Sync main -> test-feature"
-          body: |
-            This PR was created automatically after a push or merge to `main`.
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-            Please review and merge it into `test-feature` when ready.
-          labels: |
-            automated
-            sync
-          delete-branch: true
+      - name: Check if test-feature differs from main
+        id: diff
+        run: |
+          git fetch origin test-feature
+          if git diff --quiet origin/test-feature...HEAD; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push sync branch and create PR
+        if: steps.diff.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git checkout -B sync-main-to-test-feature origin/main
+          git push --force-with-lease origin sync-main-to-test-feature
+
+          if gh pr list --repo "${{ github.repository }}" --head "sync-main-to-test-feature" --base "test-feature" --json number --jq 'length' | grep -q '^0$'; then
+            gh pr create \
+              --repo "${{ github.repository }}" \
+              --base "test-feature" \
+              --head "sync-main-to-test-feature" \
+              --title "Sync main -> test-feature" \
+              --body "This PR was created automatically after a push or merge to main."
+          else
+            echo "PR already exists for sync-main-to-test-feature -> test-feature"
+          fi
